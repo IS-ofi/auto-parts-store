@@ -1,0 +1,44 @@
+{
+  "name": "auto-parts-store",
+  "version": "1.0.0",
+  "description": "**AutoParts Hub** — це сучасна вебплатформа для зручного пошуку, вибору та купівлі автомобільних запчастин. Застосунок створений для того, щоб об'єднати власників автомобілів і надійних постачальників автокомпонентів в одному інтуїтивно зрозумілому інтерфейсі, мінімізуючи час на пошук потрібної деталі.",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,json,html,css,md}\"",
+    "test": "node --test",
+    "prepare": "husky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IS-ofi/auto-parts-store.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/IS-ofi/auto-parts-store/issues"
+  },
+  "homepage": "https://github.com/IS-ofi/auto-parts-store#readme",
+  "devDependencies": {
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.9"
+  },
+  "lint-staged": {
+    "*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css,html,md}": [
+      "prettier --write"
+    ]
+  }
+}
