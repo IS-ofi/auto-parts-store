@@ -4,6 +4,7 @@ const { initDb } = require('./db');
 const { asyncLocalStorage } = require('./context');
 const { handleProductRoutes } = require('./routes/productRoutes');
 const { handleOrderRoutes } = require('./routes/orderRoutes');
+const { handleAuthRoutes } = require('./routes/authRoutes');
 
 const PORT = process.env.PORT || 3000;
 
@@ -35,6 +36,8 @@ const server = http.createServer(async (req, res) => {
       // 3. Роути замовлень (транзакційні операції з MongoDB)
       const handledOrders = await handleOrderRoutes(req, res);
       if (handledOrders) return;
+      const handledAuth = await handleAuthRoutes(req, res);
+      if (handledAuth) return;
       // 3. Симуляція помилки для перевірки глобального обробника
       if (req.url === '/api/error-test') {
         throw new Error('Симульована критична помилка в бізнес-логіці!');
