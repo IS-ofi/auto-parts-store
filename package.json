@@ -42,5 +42,8 @@
     "*.{json,css,html,md}": [
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "mongodb": "^7.7.0"
   }
 }
