@@ -5,6 +5,8 @@ const { asyncLocalStorage } = require('./context');
 const { handleProductRoutes } = require('./routes/productRoutes');
 const { handleOrderRoutes } = require('./routes/orderRoutes');
 const { handleAuthRoutes } = require('./routes/authRoutes');
+const { handleCartRoutes } = require('./routes/cartRoutes');
+const { handleWishlistRoutes } = require('./routes/wishlistRoutes');
 
 const PORT = process.env.PORT || 3000;
 
@@ -38,6 +40,10 @@ const server = http.createServer(async (req, res) => {
       if (handledOrders) return;
       const handledAuth = await handleAuthRoutes(req, res);
       if (handledAuth) return;
+      const { handleCartRoutes } = require('./routes/cartRoutes');
+      const { handleWishlistRoutes } = require('./routes/wishlistRoutes');
+      if (await handleCartRoutes(req, res)) return;
+      if (await handleWishlistRoutes(req, res)) return;
       // 3. Симуляція помилки для перевірки глобального обробника
       if (req.url === '/api/error-test') {
         throw new Error('Симульована критична помилка в бізнес-логіці!');

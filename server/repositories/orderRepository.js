@@ -4,6 +4,18 @@ const { ObjectId } = require('mongodb');
 /**
  * Створення замовлення з перевіркою залишків та очищенням кошика (послідовне виконання для standalone MongoDB)
  */
+async function getOrdersByUserId(userId) {
+  const db = getDb();
+  return await db.collection('orders').find({ userId }).toArray();
+}
+
+async function updateOrderStatus(orderId, status) {
+  const db = getDb();
+  const result = await db
+    .collection('orders')
+    .updateOne({ _id: new ObjectId(orderId) }, { $set: { status, updatedAt: new Date() } });
+  return result.modifiedCount > 0;
+}
 async function createOrder(userId, items) {
   const db = getDb();
   const ordersCollection = db.collection('orders');
@@ -63,4 +75,6 @@ async function createOrder(userId, items) {
 
 module.exports = {
   createOrder,
+  getOrdersByUserId,
+  updateOrderStatus,
 };
