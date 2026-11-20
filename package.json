@@ -5,6 +5,7 @@
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
+    "start:static": "node server/server.js --static",
     "dev": "node --watch server/server.js",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",

@@ -13,6 +13,7 @@ const nodeGlobals = {
   fetch: 'readonly',
   setTimeout: 'readonly',
   clearTimeout: 'readonly',
+  structuredClone: 'readonly',
 };
 
 const browserGlobals = {

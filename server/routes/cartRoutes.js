@@ -1,42 +1,22 @@
-const { getCartByUserId, addToCart } = require('../repositories/cartRepository');
-const { getContext } = require('../context');
+const { readJson, sendJson } = require('../http');
+const cart = require('../services/cartService');
 
-async function handleCartRoutes(req, res) {
-  const { processId } = getContext();
+const cartRoutes = [
+  {
+    method: 'GET',
+    path: '/api/cart',
+    handler: async (_req, res, { query }) => {
+      sendJson(res, 200, { success: true, data: await cart.get(query.get('userId') ?? undefined) });
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/cart',
+    handler: async (req, res) => {
+      const data = await cart.addItem(await readJson(req));
+      sendJson(res, 200, { success: true, message: 'Товар додано до кошика', data });
+    },
+  },
+];
 
-  // GET /api/cart?userId=...
-  if (req.url.startsWith('/api/cart') && req.method === 'GET') {
-    const urlParams = new URL(req.url, `http://${req.headers.host}`);
-    const userId = urlParams.searchParams.get('userId') || 'guest';
-
-    const cart = await getCartByUserId(userId);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, data: cart, processId }));
-    return true;
-  }
-
-  // POST /api/cart (Додати товар у кошик)
-  if (req.url === '/api/cart' && req.method === 'POST') {
-    let body = '';
-    for await (const chunk of req) {
-      body += chunk;
-    }
-    const { userId = 'guest', productId, quantity } = JSON.parse(body || '{}');
-
-    const updatedCart = await addToCart(userId, productId, Number(quantity || 1));
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        success: true,
-        message: 'Товар додано до кошика',
-        data: updatedCart,
-        processId,
-      })
-    );
-    return true;
-  }
-
-  return false;
-}
-
-module.exports = { handleCartRoutes };
+module.exports = { cartRoutes };
