@@ -10,13 +10,13 @@
 - `server/routes/*Routes.js` — обробка HTTP-запитів (`authRoutes.js`, `productRoutes.js`, `cartRoutes.js`, `wishlistRoutes.js`, `orderRoutes.js`).
 - `server/repositories/*Repository.js` — шар доступу до колекцій MongoDB (`productRepository.js`, `cartRepository.js`, `wishlistRepository.js`, `orderRepository.js`).
 
-## Схема даних (MongoDB)
+## Схема даних (MongoDB, camelCase)
 
-- `users`: `{ email, passwordHash, createdAt }`
+- `users`: `{ email, password, createdAt }`
 - `products`: `{ name, price, stock, createdAt }`
-- `cart`: `{ user_id, items: [{ productId, quantity }] }`
-- `wishlists`: `{ user_id, items: [productId] }`
-- `orders`: `{ user_id, items, totalAmount, status, createdAt }`
+- `carts`: `{ userId, items: [{ productId, quantity }] }`
+- `wishlists`: `{ userId, items: [productId] }`
+- `orders`: `{ userId, items, totalPrice, status, createdAt }`
 
 ## Поза обсягом (Out of scope)
 

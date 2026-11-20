@@ -20,7 +20,7 @@ async function createOrder(userId, items) {
   const db = getDb();
   const ordersCollection = db.collection('orders');
   const productsCollection = db.collection('products');
-  const cartCollection = db.collection('cart');
+  const cartsCollection = db.collection('carts');
 
   let totalPrice = 0;
 
@@ -68,7 +68,7 @@ async function createOrder(userId, items) {
   const resultOrder = { id: insertResult.insertedId, ...newOrder };
 
   // 4. Очищення кошика користувача
-  await cartCollection.deleteMany({ userId });
+  await cartsCollection.deleteMany({ userId });
 
   return resultOrder;
 }
