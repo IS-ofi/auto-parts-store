@@ -1,39 +1,49 @@
 const { MongoClient } = require('mongodb');
+const logger = require('./logger');
 
-// URL для локальної БД. У реальному проєкті краще брати з process.env.MONGO_URI
+// URL для локальної БД; у реальному проєкті — із process.env.MONGO_URI.
 const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
-const dbName = process.env.DB_NAME || 'autoparts_store';
+const defaultDbName = process.env.DB_NAME || 'autoparts_store';
 
-// Створюємо єдиний екземпляр клієнта (Connection Pool за замовчуванням вбудований у нативний драйвер)
-const client = new MongoClient(uri);
-let dbInstance;
+// Єдиний клієнт (пул з'єднань вбудований у драйвер). Короткий таймаут вибору сервера:
+// недоступна БД має давати помилку за секунди, а не підвішувати запит на 30 с.
+const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
+let dbInstance = null;
+let transactions = false;
 
-/**
- * Ініціалізація підключення до БД.
- * Має викликатися один раз при старті сервера.
- */
-async function initDb() {
-  try {
-    console.log(`[DB] Спроба підключення до MongoDB за адресою: ${uri}`);
+// Без credentials у логах.
+const safeUri = () => uri.replace(/\/\/[^@/]*@/, '//***@');
 
-    // Підключаємося до сервера бази даних
-    await client.connect();
-    dbInstance = client.db(dbName);
-
-    // Вимога Fail-fast: перевіряємо, чи база реально відповідає
-    await dbInstance.command({ ping: 1 });
-
-    console.log(`[DB] Успішно підключено до бази даних: ${dbName} (Ping OK)`);
-  } catch (error) {
-    console.error('[DB] КРИТИЧНА ПОМИЛКА: Збій підключення до бази даних.', error.message);
-    // Якщо база недоступна — падаємо одразу (відповідно до вимог Завдання 2)
-    process.exit(1);
-  }
+async function ensureIndexes(db) {
+  await db.collection('users').createIndex({ email: 1 }, { unique: true });
+  await db.collection('carts').createIndex({ userId: 1 }, { unique: true });
+  await db.collection('wishlists').createIndex({ userId: 1 }, { unique: true });
+  await db.collection('orders').createIndex({ userId: 1, createdAt: -1 });
+  // Ідемпотентність: один ключ — одне замовлення користувача (лише для замовлень із ключем).
+  await db
+    .collection('orders')
+    .createIndex(
+      { userId: 1, idempotencyKey: 1 },
+      { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
+    );
 }
 
 /**
- * Отримання екземпляра бази даних для використання в репозиторіях (DAO).
+ * Явна ініціалізація на старті (fail-fast): підключення + ping + визначення, чи підтримуються
+ * транзакції (replica set / mongos). Кидає помилку — процес завершує server.js з кодом 1.
  */
+async function initDb({ dbName = defaultDbName } = {}) {
+  logger.info(`DB підключення до ${safeUri()}`);
+  await client.connect();
+  dbInstance = client.db(dbName);
+  await dbInstance.command({ ping: 1 });
+  const hello = await dbInstance.command({ hello: 1 });
+  transactions = Boolean(hello.setName) || hello.msg === 'isdbgrid';
+  await ensureIndexes(dbInstance);
+  logger.info(`DB готова: ${dbName} (ping OK, транзакції: ${transactions ? 'так' : 'ні'})`);
+}
+
+/** Екземпляр БД — лише для репозиторіїв (mongo). */
 function getDb() {
   if (!dbInstance) {
     throw new Error('[DB] Базу даних не ініціалізовано! Спочатку викличте initDb().');
@@ -41,8 +51,12 @@ function getDb() {
   return dbInstance;
 }
 
-module.exports = {
-  initDb,
-  getDb,
-  client, // Експортуємо клієнта для коректного закриття з'єднання (graceful shutdown), якщо знадобиться
-};
+const getClient = () => client;
+const supportsTransactions = () => transactions;
+
+async function closeDb() {
+  dbInstance = null;
+  await client.close();
+}
+
+module.exports = { initDb, getDb, getClient, supportsTransactions, closeDb };
