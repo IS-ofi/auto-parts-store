@@ -1,84 +1,23 @@
-const {
-  findUserByEmail,
-  findUserByCredentials,
-  createUser,
-} = require('../repositories/userRepository');
-const { getContext } = require('../context');
-const crypto = require('crypto');
+const { readJson, sendJson } = require('../http');
+const auth = require('../services/authService');
 
-async function handleAuthRoutes(req, res) {
-  const { processId } = getContext();
+const authRoutes = [
+  {
+    method: 'POST',
+    path: '/api/auth/register',
+    handler: async (req, res) => {
+      const result = await auth.register(await readJson(req));
+      sendJson(res, 201, { success: true, message: 'Реєстрація успішна', ...result });
+    },
+  },
+  {
+    method: 'POST',
+    path: '/api/auth/login',
+    handler: async (req, res) => {
+      const result = await auth.login(await readJson(req));
+      sendJson(res, 200, { success: true, message: 'Вхід успішний', ...result });
+    },
+  },
+];
 
-  // POST /api/auth/register - Реєстрація користувача
-  if (req.url === '/api/auth/register' && req.method === 'POST') {
-    let body = '';
-    for await (const chunk of req) {
-      body += chunk;
-    }
-    const { email, password } = JSON.parse(body || '{}');
-
-    if (!email || !password) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Вкажіть email та password', processId }));
-      return true;
-    }
-
-    const existingUser = await findUserByEmail(email);
-    if (existingUser) {
-      res.writeHead(409, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Користувач із таким email вже існує', processId }));
-      return true;
-    }
-
-    // Зберігаємо користувача (просте хешування або збереження для демонстрації)
-    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
-    const newUser = { email, password: hashedPassword, createdAt: new Date() };
-    const insertedId = await createUser(newUser);
-
-    console.log(`[${processId}] Зареєстровано нового користувача: ${email}`);
-    res.writeHead(201, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        success: true,
-        message: 'Реєстрація успішна',
-        userId: insertedId,
-        processId,
-      })
-    );
-    return true;
-  }
-
-  // POST /api/auth/login - Авторизація
-  if (req.url === '/api/auth/login' && req.method === 'POST') {
-    let body = '';
-    for await (const chunk of req) {
-      body += chunk;
-    }
-    const { email, password } = JSON.parse(body || '{}');
-
-    const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
-    const user = await findUserByCredentials(email, hashedPassword);
-
-    if (!user) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Невірний email або пароль', processId }));
-      return true;
-    }
-
-    console.log(`[${processId}] Успішна авторизація користувача: ${email}`);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        success: true,
-        message: 'Вхід успішний',
-        token: 'mock-jwt-token-12345',
-        processId,
-      })
-    );
-    return true;
-  }
-
-  return false;
-}
-
-module.exports = { handleAuthRoutes };
+module.exports = { authRoutes };

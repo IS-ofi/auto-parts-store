@@ -1,86 +1,56 @@
 const http = require('http');
 const crypto = require('crypto');
-const { initDb } = require('./db');
-const { asyncLocalStorage } = require('./context');
-const { handleProductRoutes } = require('./routes/productRoutes');
-const { handleOrderRoutes } = require('./routes/orderRoutes');
-const { handleAuthRoutes } = require('./routes/authRoutes');
-const { handleCartRoutes } = require('./routes/cartRoutes');
-const { handleWishlistRoutes } = require('./routes/wishlistRoutes');
+const { runWithContext } = require('./context');
+const { initResources } = require('./resources');
+const { handle } = require('./routes');
+const { sendJson } = require('./http');
+const { toHttpError } = require('./errors');
+const logger = require('./logger');
 
 const PORT = process.env.PORT || 3000;
 
-// Глобальний обробник неперехоплених відхилень промісів
+// Збій поза запитом (контексту немає — processId у логу буде «-»).
 process.on('unhandledRejection', (reason) => {
-  const store = asyncLocalStorage.getStore();
-  const processId = store ? store.processId : 'GLOBAL-NO-CONTEXT';
-  console.error(`[${processId}] ГЛОБАЛЬНА ПОМИЛКА (Unhandled Rejection):`, reason);
+  logger.error(`Unhandled Rejection: ${reason && reason.stack ? reason.stack : reason}`);
 });
 
-const server = http.createServer(async (req, res) => {
+const server = http.createServer((req, res) => {
   const processId = crypto.randomUUID();
 
-  // Запуск в ізольованому контексті AsyncLocalStorage
-  await asyncLocalStorage.run({ processId }, async () => {
+  // Єдина точка створення контексту: далі processId/userId бачать усі шари й логер.
+  return runWithContext({ processId }, async () => {
+    logger.info(`Вхідний запит: ${req.method} ${req.url}`);
     try {
-      console.log(`[${processId}] Вхідний запит: ${req.method} ${req.url}`);
-
-      // 1. Перевірка здоров'я / health-check
-      if (req.url === '/api/health' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', processId }));
-        return;
+      if (!(await handle(req, res))) {
+        sendJson(res, 404, { error: 'Not Found', code: 'NOT_FOUND' });
       }
-
-      // 2. Роути каталогу запчастин (працюють з MongoDB)
-      const handledProducts = await handleProductRoutes(req, res);
-      if (handledProducts) return;
-      // 3. Роути замовлень (транзакційні операції з MongoDB)
-      const handledOrders = await handleOrderRoutes(req, res);
-      if (handledOrders) return;
-      const handledAuth = await handleAuthRoutes(req, res);
-      if (handledAuth) return;
-      if (await handleCartRoutes(req, res)) return;
-      if (await handleWishlistRoutes(req, res)) return;
-      // 3. Симуляція помилки для перевірки глобального обробника
-      if (req.url === '/api/error-test') {
-        throw new Error('Симульована критична помилка в бізнес-логіці!');
-      }
-
-      // Якщо роут не знайдено
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not Found', processId }));
     } catch (error) {
-      // Єдиний глобальний обробник помилок всередині запиту
-      const store = asyncLocalStorage.getStore();
-      const currentProcessId = store ? store.processId : 'UNKNOWN';
-
-      console.error(`[${currentProcessId}] ПОМИЛКА ЗАПИТУ:`, error.message);
-
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            error: 'Internal Server Error',
-            message: error.message,
-            processId: currentProcessId,
-          })
-        );
-      }
+      // Єдиний глобальний обробник помилок: доменні помилки → 4xx, збої сховища → 503, решта → 500.
+      const { status, code, message } = toHttpError(error);
+      if (status >= 500) logger.error(`Помилка запиту: ${error.stack || error}`);
+      else logger.warn(`Запит відхилено (${status} ${code}): ${message}`);
+      sendJson(res, status, { error: message, code });
     }
   });
 });
 
+function dataSourceFromArgs() {
+  return process.argv.includes('--static') ? 'memory' : undefined;
+}
+
 async function startServer() {
-  await initDb(); // Fail-fast перевірка при старті
+  await initResources({ dataSource: dataSourceFromArgs() }); // Fail-fast для mongo
 
   server.listen(PORT, () => {
-    console.log(`[Server] Сервер успішно запущено на порту ${PORT}`);
+    logger.info(`[Server] Сервер запущено на порту ${PORT}`);
   });
 }
 
 if (require.main === module) {
-  startServer();
+  startServer().catch((error) => {
+    logger.error(`Не вдалося запустити сервер: ${error.message}`);
+    process.exit(1);
+  });
 }
 
 module.exports = { server };
