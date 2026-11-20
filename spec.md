@@ -1,33 +1,50 @@
-# Специфікація — AutoParts Hub
+# Spec — AutoParts Hub
 
-**Мета.** Бекенд інтернет-магазину автозапчастин: каталог товарів, кошик, обране, оформлення замовлень та адмін-керування. Стек: нативний Node.js (`http`) та офіційний драйвер `mongodb` без сторонніх фреймворків (`adr/adr1.md`).
+> Чернетка для завдання 2: перепишіть власноруч своїми словами (DoD §4). Рішення нижче — ваші, якщо ви з ними згодні; інакше змініть тут, а не в коді.
 
-## Модульна структура проєкту
+**Намір.** Бекенд інтернет-магазину автозапчастин: каталог, кошик, обране, замовлення, адмін-CRUD. Стек: нативний Node.js (`http`) і драйвер `mongodb`, без фреймворків (`adr/adr1.md`). Спершу всі сценарії працюють через HTTP API на статичних даних у пам'яті, потім реалізацію репозиторіїв замінено на MongoDB без змін у роутах і сервісах (`adr/adr6.md`).
 
-- `server/server.js` — HTTP-сервер, маршрутизація верхнього рівня та глобальний обробник помилок.
-- `server/db.js` — підключення до MongoDB (`fail-fast` при недоступності БД).
-- `server/context.js` — збереження `processId` запиту через `AsyncLocalStorage` (`adr/adr4.md`).
-- `server/routes/*Routes.js` — обробка HTTP-запитів (`authRoutes.js`, `productRoutes.js`, `cartRoutes.js`, `wishlistRoutes.js`, `orderRoutes.js`).
-- `server/repositories/*Repository.js` — шар доступу до колекцій MongoDB (`productRepository.js`, `cartRepository.js`, `wishlistRepository.js`, `orderRepository.js`, `userRepository.js`).
-  **Залежності:** `routes/*` звертаються до БД лише через `repositories/*`; прямий імпорт `db.js` у роутах заборонено.
+## Шари та залежності
 
-## Схема даних (MongoDB, camelCase)
+`routes` (лише HTTP: розбір запиту, статус, JSON) → `services` (бізнес-правила, валідація, що робити при збої) → `repositories` (єдине місце, що знає про сховище; дві реалізації: `memory/` і `mongo/`) → `db.js`.
+Заборонено: `routes` → `repositories`/`db.js`/`mongodb`; `services` → `mongodb`/`db.js`; запити й транзакції поза `repositories/mongo`.
+Наскрізне без протягування параметрів (`adr/adr4.md`): `context.js` (AsyncLocalStorage: `processId`, `userId`), `logger.js` (кожен рядок містить `processId`), `resources.js` (реєстр: репозиторії обраного джерела даних).
 
-- `users`: `{ email, password, createdAt }`
-- `products`: `{ name, price, stock, createdAt }`
-- `carts`: `{ userId, items: [{ productId, quantity }] }`
-- `wishlists`: `{ userId, items: [productId] }`
-- `orders`: `{ userId, items, totalPrice, status, createdAt }`
+## Сценарії та очікувана поведінка (HTTP)
 
-## Поза обсягом (Out of scope)
+- `POST /api/auth/register` `{email,password}` → 201 `{userId}`; 400 без полів чи з не-рядками; 409 email зайнятий.
+- `POST /api/auth/login` → 200 `{token,userId}`; 400 без email чи password; 401 невірні дані.
+- `GET|POST /api/products`, `PUT|DELETE /api/products/:id` → 200/201; 400 (`name` непорожній, `price` > 0, `stock` ціле ≥ 0, `:id` — 24 hex); 404 немає товару.
+- `GET /api/cart?userId`, `POST /api/cart` `{userId,productId,quantity ≥ 1}` → 200; 404 товару немає.
+- `GET /api/wishlist?userId`, `POST /api/wishlist` `{userId,productId}` (toggle) → 200; 404 товару немає.
+- `POST /api/orders` `{userId,items[{productId,quantity}]}`, заголовок `Idempotency-Key` (необов'язковий) → 201; повтор з тим самим ключем → 200 і те саме замовлення (залишки не змінюються вдруге); 404 товару немає; 409 `INSUFFICIENT_STOCK`; 400 порожній `items`/дубль `productId`.
+- `GET /api/orders?userId` (обов'язковий → 400), `PATCH /api/orders/:id/status` `{status}` ∈ `CREATED|PROCESSING|SHIPPED|DONE|CANCELLED` → 200; 400; 404.
 
-Окремий шар `controllers/` (логіки поки замало, валідація виконується в роутах), категорії з `$lookup`, повноцінні JWT-сесії та криптографічне хешування паролів (тимчасово використовується заглушка).
+## Дані та запити (MongoDB, camelCase)
+
+`users{email(unique),password,createdAt}` · `products{name,price,stock,createdAt}` · `carts{userId(unique),items[{productId,quantity}]}` · `wishlists{userId(unique),items[productId]}` · `orders{userId,items[{productId,quantity,price}],totalPrice,status,idempotencyKey?,createdAt}`; унікальний частковий індекс `orders(userId,idempotencyKey)`.
+Замовлення — **читання товарів не залежить від числа позицій**: один `find({_id:{$in}})` (N+1 заборонено); списання залишків — умовне (`stock >= quantity`): один `bulkWrite` у транзакції або (standalone) один умовний `updateOne` на позицію без додаткових читань; далі `insertOne` замовлення й `deleteOne` кошика в `carts`.
+Консистентність: на replica set — `withTransaction` (залишки + замовлення + кошик атомарно). На standalone — умовні списання й **компенсація** (повернення списаного, якщо щось пішло не так); ідемпотентність — унікальний індекс (`adr/adr5.md`).
+
+## Помилки
+
+- Один глобальний обробник у `server.js`; `try/catch` у роутах/сервісах/репозиторіях немає (виняток — компенсація в `repositories/mongo/orderRepository.js`).
+- Доменні помилки (`AppError`: 400/401/404/409) віддають `{error,code,processId}`; некоректний JSON, невірний ObjectId, вхід без пароля → 400, не 500.
+- Недоступність БД під час роботи (`MongoNetworkError`, `MongoServerSelectionError`) → 503 `DATA_SOURCE_UNAVAILABLE`; на старті — `exit 1` (fail-fast, `ping`).
+- Невідома помилка → 500 `Internal Server Error` без тексту внутрішньої помилки (текст і стек — лише в лог із `processId`).
+
+## Out of scope
+
+Шар `controllers/` (роль виконують `services/`), JWT/сесії (токен-заглушка; `userId` береться із запиту й лише додається в контекст логів), надійне хешування паролів (sha256 тимчасово), перевірка ролей, категорії/`$lookup`.
 
 ## Критерії прийняття
 
-1. `npm run lint` завершується з 0 помилок та попереджень (`--max-warnings 0`).
-2. `npm run format:check` підтверджує форматування всіх файлів за Prettier.
-3. `npm run build` перевіряє синтаксис усіх `.js` файлів (`node --check`).
-4. `npm test` запускає smoke-тест сервера (`GET /api/health` повертає статус `200`).
-5. Хук `pre-commit` блокує коміти з помилками лінтера або форматування, а `pre-push` запускає `lint`, `build` і `test`.
-6. Роути не імпортують `db.js` напряму.
+1. `npm run lint`, `npm run format:check`, `npm run build` — без помилок.
+2. `npm test` проходить усі сценарії вище через HTTP на `memory`-репозиторіях; ті самі сценарії проходять на MongoDB (`TEST_MONGO_URI`, окрема база на прогін).
+3. `POST /api/orders` з N позиціями робить рівно 1 читання товарів (тест рахує виклики `products.findByIds`, `findById` — 0).
+4. Після замовлення кошик користувача порожній (колекція `carts`); при нестачі залишку 409 і залишки не змінені.
+5. Повтор `POST /api/orders` з тим самим `Idempotency-Key` не створює другого замовлення.
+6. Некоректний JSON, `:id` не 24 hex, вхід без пароля → 400; тіло 500 не містить тексту внутрішньої помилки.
+7. Кожен рядок логу має `processId` (у т.ч. `DB …` та компенсація); тест перехоплює лог і перевіряє це.
+8. `routes/` та `services/` не імпортують `db.js`/`mongodb` (`grep -rnE "require\('(\.\./)+db'\)|require\('mongodb'\)" server/routes server/services` → порожньо).
+9. Сервер падає на старті (`exit 1`), якщо MongoDB недоступна (`DATA_SOURCE=mongo`).
