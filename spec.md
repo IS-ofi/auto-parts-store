@@ -8,7 +8,8 @@
 - `server/db.js` — підключення до MongoDB (`fail-fast` при недоступності БД).
 - `server/context.js` — збереження `processId` запиту через `AsyncLocalStorage` (`adr/adr4.md`).
 - `server/routes/*Routes.js` — обробка HTTP-запитів (`authRoutes.js`, `productRoutes.js`, `cartRoutes.js`, `wishlistRoutes.js`, `orderRoutes.js`).
-- `server/repositories/*Repository.js` — шар доступу до колекцій MongoDB (`productRepository.js`, `cartRepository.js`, `wishlistRepository.js`, `orderRepository.js`).
+- `server/repositories/*Repository.js` — шар доступу до колекцій MongoDB (`productRepository.js`, `cartRepository.js`, `wishlistRepository.js`, `orderRepository.js`, `userRepository.js`).
+  **Залежності:** `routes/*` звертаються до БД лише через `repositories/*`; прямий імпорт `db.js` у роутах заборонено.
 
 ## Схема даних (MongoDB, camelCase)
 
@@ -29,3 +30,4 @@
 3. `npm run build` перевіряє синтаксис усіх `.js` файлів (`node --check`).
 4. `npm test` запускає smoke-тест сервера (`GET /api/health` повертає статус `200`).
 5. Хук `pre-commit` блокує коміти з помилками лінтера або форматування, а `pre-push` запускає `lint`, `build` і `test`.
+6. Роути не імпортують `db.js` напряму.

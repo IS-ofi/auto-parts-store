@@ -40,8 +40,6 @@ const server = http.createServer(async (req, res) => {
       if (handledOrders) return;
       const handledAuth = await handleAuthRoutes(req, res);
       if (handledAuth) return;
-      const { handleCartRoutes } = require('./routes/cartRoutes');
-      const { handleWishlistRoutes } = require('./routes/wishlistRoutes');
       if (await handleCartRoutes(req, res)) return;
       if (await handleWishlistRoutes(req, res)) return;
       // 3. Симуляція помилки для перевірки глобального обробника
@@ -81,4 +79,8 @@ async function startServer() {
   });
 }
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { server };
