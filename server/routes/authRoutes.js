@@ -1,11 +1,13 @@
-const { getDb } = require('../db');
+const {
+  findUserByEmail,
+  findUserByCredentials,
+  createUser,
+} = require('../repositories/userRepository');
 const { getContext } = require('../context');
 const crypto = require('crypto');
 
 async function handleAuthRoutes(req, res) {
   const { processId } = getContext();
-  const db = getDb();
-  const usersCollection = db.collection('users');
 
   // POST /api/auth/register - Реєстрація користувача
   if (req.url === '/api/auth/register' && req.method === 'POST') {
@@ -21,7 +23,7 @@ async function handleAuthRoutes(req, res) {
       return true;
     }
 
-    const existingUser = await usersCollection.findOne({ email });
+    const existingUser = await findUserByEmail(email);
     if (existingUser) {
       res.writeHead(409, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Користувач із таким email вже існує', processId }));
@@ -31,7 +33,7 @@ async function handleAuthRoutes(req, res) {
     // Зберігаємо користувача (просте хешування або збереження для демонстрації)
     const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
     const newUser = { email, password: hashedPassword, createdAt: new Date() };
-    const result = await usersCollection.insertOne(newUser);
+    const insertedId = await createUser(newUser);
 
     console.log(`[${processId}] Зареєстровано нового користувача: ${email}`);
     res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -39,7 +41,7 @@ async function handleAuthRoutes(req, res) {
       JSON.stringify({
         success: true,
         message: 'Реєстрація успішна',
-        userId: result.insertedId,
+        userId: insertedId,
         processId,
       })
     );
@@ -55,7 +57,7 @@ async function handleAuthRoutes(req, res) {
     const { email, password } = JSON.parse(body || '{}');
 
     const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
-    const user = await usersCollection.findOne({ email, password: hashedPassword });
+    const user = await findUserByCredentials(email, hashedPassword);
 
     if (!user) {
       res.writeHead(401, { 'Content-Type': 'application/json' });

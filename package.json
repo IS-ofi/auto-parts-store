@@ -9,9 +9,10 @@
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,json,html,css,md}\"",
-    "build": "echo 'Build passed successfully'",
-    "test": "echo 'Smoke test passed' && exit 0",
-    "prepare": "husky"
+    "build": "node scripts/build-check.js",
+    "test": "node --test test/*.test.js",
+    "prepare": "husky",
+    "format:check": "prettier --check \"**/*.{js,mjs,json,html,css,md}\""
   },
   "repository": {
     "type": "git",
@@ -35,15 +36,18 @@
     "prettier": "^3.9.9"
   },
   "lint-staged": {
-    "*.js": [
-      "eslint --fix",
-      "prettier --write"
+    "*.{js,mjs}": [
+      "eslint --max-warnings 0",
+      "prettier --check"
     ],
     "*.{json,css,html,md}": [
-      "prettier --write"
+      "prettier --check"
     ]
   },
   "dependencies": {
     "mongodb": "^7.7.0"
+  },
+  "engines": {
+    "node": ">=22.22.1"
   }
 }
