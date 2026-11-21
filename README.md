@@ -44,5 +44,14 @@
 
 - `npm run start:static` — прототип на даних у пам'яті (без БД).
 - `npm start` — MongoDB (`MONGO_URI`, `DB_NAME`); якщо БД недоступна, процес завершується з кодом 1.
-- `npm test` — memory-сценарії та перевірка меж шарів. Ті самі сценарії на MongoDB: `TEST_MONGO_URI=mongodb://127.0.0.1:27017 npm test` (окрема база на прогін видаляється).
+- `npm test` — повний прогін усіх рівнів тестів (unit, інтеграційні на реальній MongoDB у режимах `standalone` та `replica set`, HTTP E2E та перевірка меж шарів) однією командою. Повторний запуск без витоку стану: `npm test -- --runs 2`.
+- `npm run test:fast` — швидкі unit- та memory-тести без запуску БД (виконуються у `pre-push`).
+- `npm run mutation` — мутаційне тестування критичних модулів через StrykerJS (звіт: `reports/mutation-report.md`).
 - Для транзакцій оформлення замовлення MongoDB має працювати як replica set; на standalone діє компенсація (`adr/adr5.md`).
+
+## 📚 Артефакти верифікації (Завдання 3)
+
+- **Специфікація тестування:** [`spec-task3.md`](spec-task3.md)
+- **Архітектурні рішення:** [`adr/adr7.md`](adr/adr7.md) (інтеграція з реальною БД), [`adr/adr8.md`](adr/adr8.md) (мутаційне тестування)
+- **Звіт мутацій і класифікація:** [`reports/mutation-report.md`](reports/mutation-report.md)
+- **Слід роботи з AI та аудит:** [`ai/z3.md`](ai/z3.md)
