@@ -327,6 +327,73 @@ function defineApiScenarios(label, { setup, teardown }) {
       assert.ok(lines.some((l) => /(MEM|DB) orders\.place ok/.test(l)));
       assert.ok(lines.some((l) => l.includes(`user=${userId}`)));
     });
+
+    it('A4 ізоляція між користувачами, кілька товарів у кошику та різні ключі ідемпотентності', async () => {
+      const e1 = `${unique()}@example.com`;
+      const e2 = `${unique()}@example.com`;
+      const r1 = await api('POST', '/api/auth/register', {
+        body: { email: e1, password: 'secret1' },
+      });
+      const r2 = await api('POST', '/api/auth/register', {
+        body: { email: e2, password: 'secret2' },
+      });
+      const l2 = await api('POST', '/api/auth/login', { body: { email: e2, password: 'secret2' } });
+      assert.equal(l2.json.userId, r2.json.userId);
+
+      const [u1, u2] = [r1.json.userId, r2.json.userId];
+      const [a, b] = [await createProduct('A', 100, 10), await createProduct('B', 200, 10)];
+
+      await api('POST', '/api/cart', { body: { userId: u1, productId: a._id, quantity: 1 } });
+      const cart = await api('POST', '/api/cart', {
+        body: { userId: u1, productId: b._id, quantity: 2 },
+      });
+      assert.equal(cart.json.data.items.length, 2);
+
+      const o1 = await api('POST', '/api/orders', {
+        headers: { 'Idempotency-Key': 'k-1' },
+        body: { userId: u1, items: [{ productId: a._id, quantity: 1 }] },
+      });
+      const o2 = await api('POST', '/api/orders', {
+        headers: { 'Idempotency-Key': 'k-2' },
+        body: { userId: u1, items: [{ productId: b._id, quantity: 1 }] },
+      });
+      await api('POST', '/api/orders', {
+        headers: { 'Idempotency-Key': 'k-1' },
+        body: { userId: u2, items: [{ productId: a._id, quantity: 1 }] },
+      });
+      assert.notEqual(o2.json.data._id, o1.json.data._id);
+
+      const u1Orders = await api('GET', `/api/orders?userId=${u1}`);
+      assert.equal(u1Orders.json.data.length, 2);
+    });
+
+    it('A5 оновлення конкретного замовлення серед кількох і 404 для неіснуючих товару й замовлення', async () => {
+      const userId = `u-${unique()}`;
+      const a = await createProduct('A', 100, 10);
+      const o1 = await api('POST', '/api/orders', {
+        body: { userId, items: [{ productId: a._id, quantity: 1 }] },
+      });
+      const o2 = await api('POST', '/api/orders', {
+        body: { userId, items: [{ productId: a._id, quantity: 1 }] },
+      });
+
+      const upd = await api('PATCH', `/api/orders/${o2.json.data._id}/status`, {
+        body: { status: 'SHIPPED' },
+      });
+      assert.equal(upd.json.data.status, 'SHIPPED');
+      const list = await api('GET', `/api/orders?userId=${userId}`);
+      assert.equal(list.json.data.find((o) => o._id === o1.json.data._id).status, 'CREATED');
+
+      assert.equal(
+        (await api('PUT', `/api/products/${MISSING_ID}`, { body: { price: 99 } })).status,
+        404
+      );
+      assert.equal(
+        (await api('PATCH', `/api/orders/${MISSING_ID}/status`, { body: { status: 'SHIPPED' } }))
+          .status,
+        404
+      );
+    });
   });
 }
 

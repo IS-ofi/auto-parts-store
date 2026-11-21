@@ -52,6 +52,7 @@ describe('validation.email', () => {
       'a@b .de',
       'a@b.co x',
       'a@@b.co',
+      ['a@b.co'],
       '',
       null,
       5,
@@ -74,6 +75,7 @@ describe('validation.id', () => {
       'g' + HEX.slice(1),
       ` ${HEX}`,
       `${HEX}\n`,
+      [HEX],
       12,
       null,
     ]) {
