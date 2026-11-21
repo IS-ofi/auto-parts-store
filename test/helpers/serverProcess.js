@@ -33,19 +33,17 @@ function spawnServer(env) {
   });
 }
 
-/** РЎРїСЂР°РІР¶РЅС–Р№ РїСЂРѕС†РµСЃ СЃРµСЂРІРµСЂР° (E2E): С‡РµРєР°С” РЅР° СЂСЏРґРѕРє В«РЎРµСЂРІРµСЂ Р·Р°РїСѓС‰РµРЅРѕВ» Р°Р±Рѕ РїР°РґР°С” Р· РІРёРІРѕРґРѕРј РїСЂРѕС†РµСЃСѓ. */
+/** Справжній процес сервера (E2E): чекає на рядок «Сервер запущено» або падає з виводом процесу. */
 async function startServer(env, { timeoutMs = 20000 } = {}) {
   const { child, port, state, exited } = await spawnServer(env);
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       clearInterval(poll);
       child.kill();
-      reject(
-        new Error(`СЃРµСЂРІРµСЂ РЅРµ СЃС‚Р°СЂС‚СѓРІР°РІ Р·Р° ${timeoutMs} РјСЃ:\n${state.output}`)
-      );
+      reject(new Error(`сервер не стартував за ${timeoutMs} мс:\n${state.output}`));
     }, timeoutMs);
     const poll = setInterval(() => {
-      if (!state.output.includes('РЎРµСЂРІРµСЂ Р·Р°РїСѓС‰РµРЅРѕ')) return;
+      if (!state.output.includes('Сервер запущено')) return;
       clearTimeout(timer);
       clearInterval(poll);
       resolve();
@@ -53,9 +51,7 @@ async function startServer(env, { timeoutMs = 20000 } = {}) {
     exited.then((code) => {
       clearTimeout(timer);
       clearInterval(poll);
-      reject(
-        new Error(`СЃРµСЂРІРµСЂ Р·Р°РІРµСЂС€РёРІСЃСЏ Р· РєРѕРґРѕРј ${code}:\n${state.output}`)
-      );
+      reject(new Error(`сервер завершився з кодом ${code}:\n${state.output}`));
     });
   });
   return {
@@ -68,7 +64,7 @@ async function startServer(env, { timeoutMs = 20000 } = {}) {
   };
 }
 
-/** Р—Р°РїСѓСЃРєР°С” СЃРµСЂРІРµСЂ С– С‡РµРєР°С”, РїРѕРєРё РІС–РЅ Р·Р°РІРµСЂС€РёС‚СЊСЃСЏ СЃР°Рј (fail-fast). РџРѕРІРµСЂС‚Р°С” РєРѕРґ С– РІРёРІС–Рґ. */
+/** Запускає сервер і чекає, поки він завершиться сам (fail-fast). Повертає код і вивід. */
 async function runUntilExit(env, { timeoutMs = 30000 } = {}) {
   const { child, state, exited } = await spawnServer(env);
   const timer = setTimeout(() => child.kill(), timeoutMs);
