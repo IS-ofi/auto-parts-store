@@ -11,7 +11,13 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,json,html,css,md}\"",
     "build": "node scripts/build-check.js",
-    "test": "node --test test/*.test.js",
+    "test": "node scripts/test-all.js",
+    "test:fast": "node --test \"test/unit/*.test.js\" test/api.memory.test.js test/architecture.test.js test/smoke.test.js test/static.test.js",
+    "test:coverage": "node --test --experimental-test-coverage \"test/unit/*.test.js\" test/api.memory.test.js test/architecture.test.js test/smoke.test.js test/static.test.js",
+    "test:unit": "node --test \"test/unit/*.test.js\"",
+    "test:integration": "node --test \"test/integration/*.test.js\"",
+    "test:e2e": "node --test \"test/e2e/*.test.js\"",
+    "mutation": "stryker run",
     "prepare": "husky",
     "format:check": "prettier --check \"**/*.{js,mjs,json,html,css,md}\""
   },
@@ -29,6 +35,7 @@
   "homepage": "https://github.com/IS-ofi/auto-parts-store#readme",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@stryker-mutator/core": "^9.0.0",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
