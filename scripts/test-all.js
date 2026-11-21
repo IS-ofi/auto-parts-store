@@ -1,26 +1,11 @@
-// Одна команда: `npm test` → піднімає MongoDB (standalone + replica set) у Docker, проганяє
-// unit + інтеграційні + E2E, завжди прибирає контейнери. Повторний прогін: `npm test -- --runs 2`.
-// Якщо TEST_MONGO_URI і TEST_MONGO_RS_URI вже задані (CI із service-контейнерами) — Docker не чіпаємо.
-const { spawnSync } = require('node:child_process');
+// Одна команда: `npm test` -> піднімає реальні процеси mongod (standalone + replica set),
+// проганяє unit + інтеграційні + E2E та зупиняє БД. Повторний прогін: `npm test -- --runs 2`.
+// Якщо TEST_MONGO_URI і TEST_MONGO_RS_URI вже задані (наприклад, у CI з Docker) — використовує їх.
+const { spawn } = require('node:child_process');
 const { join } = require('node:path');
+const { MongoMemoryServer, MongoMemoryReplSet } = require('mongodb-memory-server');
 
 const ROOT = join(__dirname, '..');
-const COMPOSE = ['compose', '-p', 'autoparts-test', '-f', join(ROOT, 'docker-compose.test.yml')];
-const docker = (args, options = {}) =>
-  spawnSync('docker', [...COMPOSE, ...args], { encoding: 'utf8', ...options });
-
-// Ctrl+C зупиняє дочірній node --test, а ми все одно встигаємо прибрати контейнери.
-process.on('SIGINT', () => {});
-
-function uriFor(service) {
-  const result = docker(['port', service, '27017']);
-  const match = /:(\d+)\s*$/.exec((result.stdout || '').trim().split('\n')[0]);
-  if (result.status !== 0 || !match) {
-    throw new Error(`Не вдалося отримати порт сервісу ${service}: ${result.stderr}`);
-  }
-  // directConnection: одновузловий replica set оголошує host `localhost:27017`, який недосяжний ззовні.
-  return `mongodb://127.0.0.1:${match[1]}/?directConnection=true`;
-}
 
 function runsFromArgs() {
   const index = process.argv.indexOf('--runs');
@@ -28,31 +13,59 @@ function runsFromArgs() {
   return Number.isInteger(runs) && runs > 0 ? runs : 1;
 }
 
-function main() {
+function runTestProcess(env) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--test', 'test/**/*.test.js'], {
+      cwd: ROOT,
+      env,
+      stdio: 'inherit',
+    });
+    child.on('close', (code) => resolve(code ?? 1));
+  });
+}
+
+async function main() {
   const external = process.env.TEST_MONGO_URI && process.env.TEST_MONGO_RS_URI;
-  let started = false;
+  let standalone = null;
+  let replSet = null;
   let exitCode = 0;
+
+  const cleanup = async () => {
+    if (replSet) {
+      await replSet.stop().catch(() => {});
+      replSet = null;
+    }
+    if (standalone) {
+      await standalone.stop().catch(() => {});
+      standalone = null;
+    }
+  };
+
+  process.on('SIGINT', async () => {
+    await cleanup();
+    process.exit(130);
+  });
+
   try {
     let env = process.env;
     if (!external) {
-      started = true;
-      const up = docker(['up', '-d', '--wait'], { stdio: 'inherit' });
-      if (up.status !== 0) throw new Error('docker compose up --wait завершився з помилкою');
+      console.log('[test-all] Запуск локальних процесів mongod (standalone + replica set)...');
+      standalone = await MongoMemoryServer.create();
+      replSet = await MongoMemoryReplSet.create({
+        replSet: { count: 1, storageEngine: 'wiredTiger' },
+      });
       env = {
         ...process.env,
-        TEST_MONGO_URI: uriFor('mongo'),
-        TEST_MONGO_RS_URI: uriFor('mongo-rs'),
+        TEST_MONGO_URI: standalone.getUri(),
+        TEST_MONGO_RS_URI: replSet.getUri(),
       };
     }
+
     for (let run = 1; run <= runsFromArgs(); run += 1) {
-      console.log(`\n[test-all] прогін ${run}`);
-      const result = spawnSync(process.execPath, ['--test', 'test/**/*.test.js'], {
-        cwd: ROOT,
-        env,
-        stdio: 'inherit',
-      });
-      if (result.status !== 0) {
-        exitCode = result.status || 1;
+      console.log(`\n[test-all] Прогін ${run}`);
+      const status = await runTestProcess(env);
+      if (status !== 0) {
+        exitCode = status;
         break;
       }
     }
@@ -60,8 +73,9 @@ function main() {
     console.error(`[test-all] ${error.message}`);
     exitCode = 1;
   } finally {
-    if (started) docker(['down', '-v', '--remove-orphans'], { stdio: 'inherit' });
+    await cleanup();
   }
+
   process.exit(exitCode);
 }
 
