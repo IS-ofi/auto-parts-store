@@ -21,6 +21,10 @@ function parseItems(items) {
   });
 }
 
+/** Сума замовлення в грошах: округлення до копійок прибирає похибку float (0.1 * 3). */
+const calcTotal = (lines) =>
+  Math.round(lines.reduce((sum, line) => sum + line.price * line.quantity, 0) * 100) / 100;
+
 /**
  * Бізнес-операція «оформити замовлення»: валідація → ОДНЕ читання товарів → сума →
  * атомарне оформлення в репозиторії (списання залишків, замовлення, очищення кошика).
@@ -42,8 +46,7 @@ async function placeOrder(body, idempotencyKey) {
     if (!product) throw notFound(`Товар ${productId} не знайдено`);
     return { productId, quantity, name: product.name, price: product.price };
   });
-  const totalPrice =
-    Math.round(lines.reduce((sum, line) => sum + line.price * line.quantity, 0) * 100) / 100;
+  const totalPrice = calcTotal(lines);
 
   const result = await repos().orders.place({
     userId,
@@ -75,4 +78,4 @@ async function updateStatus(rawId, body) {
   return order;
 }
 
-module.exports = { placeOrder, listByUser, updateStatus, STATUSES };
+module.exports = { placeOrder, listByUser, updateStatus, calcTotal, parseItems, STATUSES };
