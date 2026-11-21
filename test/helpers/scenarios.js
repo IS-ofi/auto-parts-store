@@ -251,6 +251,68 @@ function defineApiScenarios(label, { setup, teardown }) {
       assert.deepEqual(calls, { findByIds: 1, findById: 0 });
     });
 
+    // Аудит 3: підсилення після мутаційного прогону (reports/mutation-report.md, A1–A3).
+    it('A1 межа залишку: замовити рівно весь залишок можна, на 1 більше — 409', async () => {
+      const userId = `u-${unique()}`;
+      const p = await createProduct('Остання одиниця', 10, 3);
+      const tooMany = await api('POST', '/api/orders', {
+        body: { userId, items: [{ productId: p._id, quantity: 4 }] },
+      });
+      assert.equal(tooMany.status, 409);
+      assert.equal(await stockOf(p._id), 3);
+
+      const exact = await api('POST', '/api/orders', {
+        body: { userId, items: [{ productId: p._id, quantity: 3 }] },
+      });
+      assert.equal(exact.status, 201);
+      assert.equal(await stockOf(p._id), 0);
+
+      const empty = await api('POST', '/api/orders', {
+        body: { userId, items: [{ productId: p._id, quantity: 1 }] },
+      });
+      assert.equal(empty.status, 409);
+    });
+
+    it('A2 ідемпотентність прив’язана до користувача: той самий ключ у двох → два замовлення', async () => {
+      const [alice, bob] = [`u-${unique()}`, `u-${unique()}`];
+      const p = await createProduct('Спільний товар', 10, 5);
+      const send = (userId) =>
+        api('POST', '/api/orders', {
+          body: { userId, items: [{ productId: p._id, quantity: 1 }] },
+          headers: { 'Idempotency-Key': 'shared-key' },
+        });
+      const a = await send(alice);
+      const b = await send(bob);
+      assert.equal(a.status, 201);
+      assert.equal(b.status, 201);
+      assert.equal(b.json.replayed, false);
+      assert.notEqual(a.json.data._id, b.json.data._id);
+      assert.equal(await stockOf(p._id), 3);
+    });
+
+    it('A3 сума замовлення без похибки float (0.1 × 3 = 0.3, а не 0.30000000000000004)', async () => {
+      const userId = `u-${unique()}`;
+      const p = await createProduct('Дрібна ціна', 0.1, 10);
+      const res = await api('POST', '/api/orders', {
+        body: { userId, items: [{ productId: p._id, quantity: 3 }] },
+      });
+      assert.equal(res.status, 201);
+      assert.equal(res.json.data.totalPrice, 0.3);
+    });
+
+    it('числа-рядки з форм клієнта приймаються, сміття відхиляється', async () => {
+      const ok = await api('POST', '/api/products', {
+        body: { name: 'Рядкові числа', price: '100', stock: '4' },
+      });
+      assert.equal(ok.status, 201);
+      assert.equal(ok.json.data.price, 100);
+      assert.equal(ok.json.data.stock, 4);
+      const bad = await api('POST', '/api/products', {
+        body: { name: 'Сміття', price: 'abc', stock: 1 },
+      });
+      assert.equal(bad.status, 400);
+    });
+
     it('кожен рядок логу містить processId; є операції сховища і користувач', async () => {
       const userId = `u-${unique()}`;
       const a = await createProduct('A', 10, 5);
